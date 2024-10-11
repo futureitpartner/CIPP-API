@@ -19,20 +19,20 @@ Function Invoke-EditTenant {
     $customerContextId = $request.body.customerId
 
     $tokens = try {
-        $Graphtoken = (Get-GraphToken)
-        $tenantDetails = (Invoke-RestMethod -Method Get -Uri "https://graph.microsoft.com/v1.0/contracts?`$filter=customerId eq $($customerContextId)" -ContentType 'application/json' -Headers $Graphtoken).value
-        $tenantObjectId = $tenantDetails.id
+        $AADGraphtoken = (Get-GraphToken -scope 'https://graph.windows.net/.default')
+        $allTenantsDetails = (Invoke-RestMethod -Method GET -Uri 'https://graph.windows.net/myorganization/contracts?api-version=1.6' -ContentType 'application/json' -Headers $AADGraphtoken)
+        $tenantObjectId = $allTenantsDetails.value | Where-Object { $_.customerContextId -eq $customerContextId } | Select-Object 'objectId'
     }
     catch {
-        $Results = "Failed to retrieve tenant. Error: $($_.Exception.Message)"
-        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -tenant $($tenantDisplayName) -message "Failed to retrieve tenant. Error:$($_.Exception.Message)" -Sev 'Error'
+        $Results = "Failed to retrieve list of tenants. Error: $($_.Exception.Message)"
+        Write-LogMessage -user $request.headers.'x-ms-client-principal' -API $APINAME -tenant $($tenantDisplayName) -message "Failed to retrieve list of tenants. Error:$($_.Exception.Message)" -Sev 'Error'
     }
 
 
     if ($tenantObjectId) {
         try {
             $bodyToPatch = '{"displayName":"' + $tenantDisplayName + '","defaultDomainName":"' + $tenantDefaultDomainName + '"}'
-            $patchTenant = (Invoke-RestMethod -Method PATCH -Uri "https://graph.microsoft.com/v1.0/contracts/$($tenantObjectId)" -Body $bodyToPatch -ContentType 'application/json' -Headers $Graphtoken -ErrorAction Stop)
+            $patchTenant = (Invoke-RestMethod -Method PATCH -Uri "https://graph.windows.net/myorganization/contracts/$($tenantObjectId.objectId)?api-version=1.6" -Body $bodyToPatch -ContentType 'application/json' -Headers $AADGraphtoken -ErrorAction Stop)
             $Filter = "PartitionKey eq 'Tenants' and defaultDomainName eq '{0}'" -f $tenantDefaultDomainName
             try {
                 $TenantsTable = Get-CippTable -tablename Tenants
